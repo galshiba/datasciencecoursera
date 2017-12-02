@@ -1,0 +1,145 @@
+---
+title: "Coursera Practical Machine Learning Project"
+author: "Aaron Galluzzi"
+date: "December 1, 2017"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+# Introduction
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behaviour, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, we will be using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways:
+
+1. Exactly according to specification (Class A)
+2. Throwing the elbows to the front (Class B)
+3. Lifting the dumbell only halfway (Class C)
+4. Lowering the dumbell only halfway (Class D)
+5. Throwing the hips to the front (Class E)
+
+Only Class A represents the correct performance. More information is available from the following website: (http://groupware.les.inf.puc-rio.br/har) (see the section on Weight Lifting Exercise Dataset).
+
+## Data
+
+The training data is available from the following link:
+
+(https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data is available is available from the following link:
+
+(https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+## Objective
+
+The objective of the project is to predict the manner in which they exercise. This is based on the "classe" variable in the exercise dataset.
+
+# Data Processing
+
+## Getting, Loading and Cleaning the Data
+
+We first load the R packages needed for the analysis and then download the training and testing datasets from the given URLs.
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+```
+
+```{r}
+trainURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainURL),na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testURL),na.strings=c("NA","#DIV/0!",""))
+```
+The training dataset contains 19622 observations and 160 variables, and the testing dataset contains 20 observations and the same variables as the training set. Our goal is to predict the outcome of the classe variable using the training dataset.
+
+Please note that the first 7 variables in both the training and the testing dataset contain system-generated information that is not particularly useful in terms of prediction (e.g. user name, time stamp), so these will be deleted from both datasets, as shown below.
+
+```{r}
+training <- training[,-c(1:7)]
+testing <- testing[,-c(1:7)]
+```
+
+In addition, we will be deleting columns (predictors) that contain any missing values.
+```{r}
+training <- training[,colSums(is.na(training)) == 0]
+testing <- testing[,colSums(is.na(testing)) == 0]
+```
+
+The cleaned datasets now have 53 variables, the same first 52 variables plus the classe variable we will be using for prediction.
+
+## Data Partitioning
+In order to get out-of-sample errors, we split the cleaned training dataset into a training dataset for prediction and a validation dataset.
+
+```{r}
+set.seed(1975)
+inTrain <- createDataPartition(training$classe, p=0.6, list=FALSE)
+trainData <- training[inTrain,]; validData <- training[-inTrain,]
+```
+
+# Prediction Algorithms
+
+We will be using classification trees and random forests.
+
+## Classification Trees
+Here we will be considering a k-fold cross-validation prior to fitting the classification tree, where k=5, using the trainControl function (the default setting is k=10). No variables were transformed.
+```{r}
+# Apply 5-fold cross-validation
+control <- trainControl(method="cv", number=5)
+
+# Fit a classification tree, using the cross-validation as control
+modFit_tree <- train(classe ~ ., data=trainData, method="rpart", trControl=control)
+print(modFit_tree, digits=4)
+
+# Plot the trees 
+fancyRpartPlot(modFit_tree$finalModel)
+
+# Generate predictions using the validaton set
+predict_tree <- predict(modFit_tree, validData)
+
+# Show the prediction results
+conf_tree <- confusionMatrix(validData$classe, predict_tree)
+print(conf_tree)
+
+# Show the accuracy.
+accuracy_tree <- conf_tree$overall[1]
+accuracy_tree
+```
+From the confusion matrix above, we see that the accuracy rate is approximately 50%, and thus the out-of-sample error is approximately 50%. The low accuracy rate demonstrates that classification trees do not fit the classe variable well.
+
+## Random Forests
+We will now try fitting a prediction model using random forests.
+```{r}
+# Fit a random forest model, using the cross-validation as control
+modFit_rf <- train(classe ~ ., data=trainData, method="rf", trControl=control)
+print(modFit_rf, digits=4)
+
+# Plot the fit.
+plot(modFit_rf)
+
+# Generate predictions using the validation set
+predict_rf <- predict(modFit_rf, validData)
+
+# Show the prediction results
+conf_rf <- confusionMatrix(validData$classe, predict_rf)
+print(conf_rf)
+
+# Show the accuracy.
+accuracy_rf <- conf_rf$overall[1]
+accuracy_rf
+
+```
+As can be seen above, the accuracy rate is approximately 99%, and thus the out-of-sample error rate is about 1%. The high accuracy rate may be due to the fact that the predictors are highly correlated. The random forest method chooses a subset of predictors at each split and decorrelates the trees, leading to high accuracy, although at the expense of interpretability and computational efficiency.
+
+# Prediction on Test Dataset
+We will now use random forests to predict the outcome variable classe for the test dataset. 
+```{r}
+# Generate predictions using the test data.
+finalPredict <- predict(modFit_rf, testing)
+finalPredict
+```
